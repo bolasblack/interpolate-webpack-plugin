@@ -1,6 +1,7 @@
 import { Plugin, Compiler } from 'webpack'
-import { Hooks as HtmlWebpackPluginHooks } from 'html-webpack-plugin'
-import { promisify, inspect } from 'util'
+import { RawSource } from 'webpack-sources'
+import { promisify } from 'util'
+import isBinaryFile from 'isbinaryfile'
 import fs from 'fs'
 import findUp from 'find-up'
 import execa from 'execa'
@@ -21,6 +22,7 @@ export interface InterpolateWebpackPluginOptionsReplacement {
 }
 
 export interface InterpolateWebpackPluginOptions {
+  context?: string
   builtin?: {
     include?: MatcherOption[]
     exclude?: MatcherOption[]
@@ -39,7 +41,8 @@ export class InterpolateWebpackPlugin implements Plugin {
   private options: InterpolateWebpackPluginOptions
   private compiler: Compiler
   private builtinInclude = (filePath: string) => true
-  private builtinExclude = (filePath: string) => false
+  private builtinExclude = (filePath: string) =>
+    filePath.endsWith('.js') || filePath.endsWith('.css') || filePath.endsWith('.map')
 
   constructor(options?: InterpolateWebpackPluginOptions) {
     this.options = options || {}
@@ -55,24 +58,27 @@ export class InterpolateWebpackPlugin implements Plugin {
 
   apply(compiler: Compiler) {
     this.compiler = compiler
-    compiler.hooks.compilation.tap(PluginName, compilation => {
-      this.tapHtmlWebpackPluginHooks(compilation.hooks as any)
-    })
-  }
 
-  private tapHtmlWebpackPluginHooks(hooks: HtmlWebpackPluginHooks) {
-    if (!hooks.htmlWebpackPluginBeforeHtmlProcessing) return
-
-    hooks.htmlWebpackPluginBeforeHtmlProcessing.tapPromise(PluginName, async data => {
+    compiler.hooks.emit.tapPromise(PluginName, async compilation => {
       const replacements = await this.getReplacements()
 
-      replacements.forEach(r => {
-        if (!r.include(data.assets.publicPath)) return
-        if (r.exclude(data.assets.publicPath)) return
-        data.html = data.html.replace(r.pattern, r.value as any)
-      })
+      Object.keys(compilation.assets).forEach(filename => {
+        const relatedReplacements =  replacements.filter(r =>
+          r.include(filename) && !r.exclude(filename)
+        )
 
-      return data
+        if (!relatedReplacements.length) return
+
+        const source: string | Buffer = compilation.assets[filename].source()
+
+        if (typeof source !== 'string' && isBinaryFile.sync(source, source.length)) return
+
+        const newSource = relatedReplacements.reduce((r, replacement) => {
+          return r.replace(replacement.pattern, replacement.value as any)
+        }, source.toString())
+
+        compilation.assets[filename] = new RawSource(newSource)
+      })
     })
   }
 
@@ -87,19 +93,33 @@ export class InterpolateWebpackPlugin implements Plugin {
         exclude: this.transformAndCombineMatchers(r.exclude == null ? false : r.exclude)
       }))
 
-      const builtinReplacements = await this.getBuiltinReplacements()
+      const builtinReplacements = (await this.getBuiltinReplacements())
+        .filter(r => r.value)
+        .map(replacement => ({
+          include: this.builtinInclude,
+          exclude: this.builtinExclude,
+          pattern: new RegExp(`%${escapeStringRegexp(replacement.pattern)}%`, 'g'),
+          value: replacement.value,
+        }))
 
       return userReplacements.concat(builtinReplacements)
     })()
   }
 
-  private async getBuiltinReplacements() {
-    const cwd = this.compiler.options.context || process.cwd()
+  public async getBuiltinReplacements() {
+    const cwd = this.getContext()
     const [packageInfoReplacements, gitInfoReplacements] = await Promise.all([
       this.getPackageInfoReplacements(cwd),
       this.getGitInfoReplacements(cwd)
     ])
     return packageInfoReplacements.concat(gitInfoReplacements)
+  }
+
+  public async definePlugin() {
+    return (await this.getBuiltinReplacements()).reduce<{ [key: string]: string }>((r, replacement) => {
+      r[replacement.pattern] = `"${replacement.value}"`
+      return r
+    }, {})
   }
 
   private async getGitInfoReplacements(cwd: string) {
@@ -108,31 +128,25 @@ export class InterpolateWebpackPlugin implements Plugin {
       execa('git', 'rev-parse --short HEAD'.split(' '), { cwd }).catch(() => null),
     ])
 
-    const gitDescribeContent = gitDescribe && gitDescribe.code === 0 && gitDescribe.stdout
-    const gitRevContent = gitRev && gitRev.code === 0 && gitRev.stdout
+    const gitDescribeContent = gitDescribe && gitDescribe.code === 0 && String(gitDescribe.stdout).trim() || ''
+    const gitRevContent = gitRev && gitRev.code === 0 && String(gitRev.stdout).trim() || ''
 
-    const gitDescribeReplacement = !gitDescribeContent ? null : {
-      include: this.builtinInclude,
-      exclude: this.builtinExclude,
-      pattern: new RegExp('%GIT_DESCRIBE%', 'g'),
+    const gitDescribeReplacement = {
+      pattern: 'GIT_DESCRIBE',
       value: gitDescribeContent,
     }
 
-    const gitRevReplacement = !gitRevContent ? null : {
-      include: this.builtinInclude,
-      exclude: this.builtinExclude,
-      pattern: new RegExp('%GIT_REV%', 'g'),
+    const gitRevReplacement = {
+      pattern: 'GIT_REV',
       value: gitRevContent,
     }
 
-    const gitVersionReplacement = (!gitDescribeContent && !gitRevContent) ? null : {
-      include: this.builtinInclude,
-      exclude: this.builtinExclude,
-      pattern: new RegExp('%GIT_VERSION%', 'g'),
+    const gitVersionReplacement = {
+      pattern: 'GIT_VERSION',
       value: gitDescribeContent || gitRevContent,
     }
 
-    return [gitDescribeReplacement!, gitRevReplacement!, gitVersionReplacement!].filter(i => i)
+    return [gitDescribeReplacement, gitRevReplacement, gitVersionReplacement]
   }
 
   private async getPackageInfoReplacements(cwd: string) {
@@ -152,10 +166,8 @@ export class InterpolateWebpackPlugin implements Plugin {
 
     const packageInfo = flat({ packageJson })
     return Object.keys(packageInfo).map(key => ({
-      include: this.builtinInclude,
-      exclude: this.builtinExclude,
-      pattern: new RegExp(`%${escapeStringRegexp(key)}%`, 'g'),
-      value: packageInfo[key],
+      pattern: key,
+      value: String(packageInfo[key]),
     }))
   }
 
@@ -177,5 +189,11 @@ export class InterpolateWebpackPlugin implements Plugin {
     if (typeof val === 'string') return str => str.includes(val)
     if (typeof val === 'function') return val
     return _ => val
+  }
+
+  private getContext() {
+    return (this.options && this.options.context) ||
+           (this.compiler && this.compiler.options.context) ||
+           process.cwd()
   }
 }

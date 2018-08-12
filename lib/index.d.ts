@@ -9,6 +9,7 @@ export interface InterpolateWebpackPluginOptionsReplacement {
     value: string | SndArgType<String['replace']>;
 }
 export interface InterpolateWebpackPluginOptions {
+    context?: string;
     builtin?: {
         include?: MatcherOption[];
         exclude?: MatcherOption[];
@@ -28,15 +29,21 @@ export declare class InterpolateWebpackPlugin implements Plugin {
     private builtinExclude;
     constructor(options?: InterpolateWebpackPluginOptions);
     apply(compiler: Compiler): void;
-    private tapHtmlWebpackPluginHooks;
     private getReplacementsPromise?;
     private getReplacements;
-    private getBuiltinReplacements;
+    getBuiltinReplacements(): Promise<{
+        pattern: string;
+        value: string;
+    }[]>;
+    definePlugin(): Promise<{
+        [key: string]: string;
+    }>;
     private getGitInfoReplacements;
     private getPackageInfoReplacements;
     private toArray;
     private transformAndCombineMatchers;
     private toMatcher;
+    private getContext;
 }
 export {};
 //# sourceMappingURL=index.d.ts.map
