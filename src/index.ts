@@ -1,4 +1,4 @@
-import { Plugin, Compiler } from 'webpack'
+import { Plugin, Compiler, compilation } from 'webpack'
 import { RawSource } from 'webpack-sources'
 import { promisify } from 'util'
 import isBinaryFile from 'isbinaryfile'
@@ -59,26 +59,37 @@ export class InterpolateWebpackPlugin implements Plugin {
   apply(compiler: Compiler) {
     this.compiler = compiler
 
-    compiler.hooks.emit.tapPromise(PluginName, async compilation => {
-      const replacements = await this.getReplacements()
-
-      Object.keys(compilation.assets).forEach(filename => {
-        const relatedReplacements =  replacements.filter(r =>
-          r.include(filename) && !r.exclude(filename)
-        )
-
-        if (!relatedReplacements.length) return
-
-        const source: string | Buffer = compilation.assets[filename].source()
-
-        if (typeof source !== 'string' && isBinaryFile.sync(source, source.length)) return
-
-        const newSource = relatedReplacements.reduce((r, replacement) => {
-          return r.replace(replacement.pattern, replacement.value as any)
-        }, source.toString())
-
-        compilation.assets[filename] = new RawSource(newSource)
+    if ('hooks' in compiler) {
+      compiler.hooks.emit.tapPromise(PluginName, this.compile)
+    } else {
+      ;(compiler as any).plugin('emit', (
+        compilation: compilation.Compilation,
+        callback: () => void,
+      ) => {
+        this.compile(compilation).then(() => callback(), callback)
       })
+    }
+  }
+
+  private compile = async (compilation: compilation.Compilation) => {
+    const replacements = await this.getReplacements()
+
+    Object.keys(compilation.assets).forEach(filename => {
+      const relatedReplacements =  replacements.filter(r =>
+        r.include(filename) && !r.exclude(filename)
+      )
+
+      if (!relatedReplacements.length) return
+
+      const source: string | Buffer = compilation.assets[filename].source()
+
+      if (typeof source !== 'string' && isBinaryFile.sync(source, source.length)) return
+
+      const newSource = relatedReplacements.reduce((r, replacement) => {
+        return r.replace(replacement.pattern, replacement.value as any)
+      }, source.toString())
+
+      compilation.assets[filename] = new RawSource(newSource)
     })
   }
 

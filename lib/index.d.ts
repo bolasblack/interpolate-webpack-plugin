@@ -29,6 +29,7 @@ export declare class InterpolateWebpackPlugin implements Plugin {
     private builtinExclude;
     constructor(options?: InterpolateWebpackPluginOptions);
     apply(compiler: Compiler): void;
+    private compile;
     private getReplacementsPromise?;
     private getReplacements;
     getBuiltinReplacements(): Promise<{

@@ -1,6 +1,6 @@
 {
   "name": "interpolate-webpack-plugin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Interpolate predefined variables to assets files",
   "main": "lib/index.js",
   "author": "c4605 <bolasblack@gmail.com>",
@@ -16,7 +16,7 @@
     "typescript": "^3.0.1"
   },
   "peerDependencies": {
-    "webpack": "^4.16.5"
+    "webpack": "<= 4"
   },
   "optionalDependencies": {},
   "dependencies": {
