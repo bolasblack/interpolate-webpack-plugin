@@ -1,32 +1,7 @@
 {
+  "extends": "@c4605/toolconfs/tsconfig-node",
   "compilerOptions": {
-    "baseUrl": ".",
-    "rootDir": "src",
-    "outDir": "lib",
-    "module": "commonjs",
-    "target": "es6",
-    "lib": ["es6"],
-    "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
-    "moduleResolution": "node",
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "noImplicitReturns": true,
-    "noImplicitThis": true,
-    "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "strictNullChecks": true,
-    "suppressImplicitAnyIndexErrors": true,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "removeComments": false,
+    "outDir": "lib"
   },
-  "include": [
-    "src",
-  ],
-  "exclude": [
-    "node_modules",
-  ],
+  "exclude": ["./lib"]
 }
