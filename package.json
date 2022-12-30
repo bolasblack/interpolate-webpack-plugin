@@ -38,7 +38,7 @@
     "escape-string-regexp": "^2.0.0",
     "execa": "^2.0.3",
     "find-up": "^4.1.0",
-    "flat": "^4.1.0",
+    "flat": "^5.0.1",
     "isbinaryfile": "^4.0.2",
     "webpack-sources": "^1.4.3"
   },
