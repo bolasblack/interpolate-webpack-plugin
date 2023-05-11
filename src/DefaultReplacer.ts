@@ -1,7 +1,7 @@
 import { Source, ReplaceSource } from 'webpack-sources'
 import { Compiler } from 'webpack'
 import { promisify } from 'util'
-import isBinaryFile from 'isbinaryfile'
+import { isBinaryFileSync } from 'isbinaryfile'
 import * as fs from 'fs'
 import * as findUp from 'find-up'
 import * as execa from 'execa'
@@ -45,7 +45,7 @@ export class DefaultReplacer {
 
     if (
       typeof sourceContent !== 'string' &&
-      isBinaryFile.sync(sourceContent, sourceContent.length)
+      isBinaryFileSync(sourceContent, sourceContent.length)
     ) {
       return source
     }
@@ -54,7 +54,7 @@ export class DefaultReplacer {
 
     const assetRawSource = sourceContent.toString()
     relatedReplacements.forEach(replacement => {
-      if (replacement)
+      if (replacement) {
         assetRawSource.replace(replacement.pattern, (...args) => {
           // args: [match, p1, p2, ..., offset, wholeString]
           const match = args[0]
@@ -66,6 +66,7 @@ export class DefaultReplacer {
           )
           return match
         })
+      }
     })
 
     return newSource
