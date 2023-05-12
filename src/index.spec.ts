@@ -1,84 +1,90 @@
 import * as os from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
-import * as PoiCore from 'poi'
 import * as webpack from 'webpack'
+import * as HtmlWebpackPlugin from 'html-webpack-plugin'
 import { InterpolateWebpackPlugin, DefaultReplacer } from './index'
 
 describe('InterpolateWebpackPlugin', () => {
   it('works', async () => {
-    const stats = await runWebpack(
+    const { outdir } = await runWebpack(
       new DefaultReplacer({
         replacements: [
           {
             pattern: /%hello%/g,
             value: 'wwwwworld',
-          },
-          {
-            pattern: /variable/g,
-            value: 'replaced',
-            exclude: filePath => filePath.endsWith('.map'),
+            exclude: (filePath) => filePath.endsWith('.map'),
           },
         ],
       }),
     )
 
-    Object.keys(stats.compilation.assets).forEach(filename => {
-      expect(stats.compilation.assets[filename].source()).not.toContain(
-        '%hello%',
-      )
-      expect(
-        stats.compilation.assets['assets/js/index.js'].source(),
-      ).not.toContain('variable')
-      expect(
-        stats.compilation.assets['assets/js/index.js.map'].source(),
-      ).toContain('variable')
-    })
+    console.log('outdir', outdir)
+    expect(
+      fs.readFileSync(path.join(outdir, 'index.html'), 'utf8'),
+    ).not.toContain('%hello%')
+    expect(fs.readFileSync(path.join(outdir, 'main.js'), 'utf8')).not.toContain(
+      '%hello%',
+    )
+    expect(fs.readFileSync(path.join(outdir, 'main.js.map'), 'utf8')).toContain(
+      '%hello%',
+    )
   })
 })
 
-function runWebpack(options: InterpolateWebpackPlugin.ConstructOptions) {
-  return new Promise<webpack.Stats>((resolve, reject) => {
+function runWebpack(
+  options: InterpolateWebpackPlugin.ConstructOptions,
+): Promise<{
+  stats: webpack.Stats
+  outdir: string
+}> {
+  return new Promise((resolve, reject) => {
     const outdir = fs.mkdtempSync(
       path.join(os.tmpdir(), `InterpolateWebpackPluginTest${Date.now()}`),
     )
 
-    const poi = new PoiCore()
-    poi.config = {
-      ...poi.config,
-      entry: path.resolve(__dirname, './__fixtures/index.js'),
-      output: {
-        ...poi.config.output,
-        dir: outdir,
-        html: {
-          title: '%hello%',
+    webpack(
+      {
+        mode: 'production',
+        devtool: 'source-map',
+        entry: path.resolve(__dirname, './__fixtures/index.js'),
+        output: {
+          path: outdir,
         },
+        module: {
+          rules: [
+            {
+              test: /\.css$/i,
+              loader: 'css-loader',
+              options: {
+                url: true,
+              },
+            },
+          ],
+        },
+        plugins: [
+          new HtmlWebpackPlugin({
+            title: '%hello%',
+          }),
+          new InterpolateWebpackPlugin(options),
+        ],
       },
-      css: {
-        ...poi.config.css,
-        extract: true,
+      (err, stats) => {
+        if (err) {
+          reject(err)
+          return
+        }
+
+        if (stats?.hasErrors()) {
+          reject(new Error(stats.toString()))
+          return
+        }
+
+        resolve({
+          outdir,
+          stats: stats!,
+        })
       },
-      chainWebpack(config) {
-        config.mode('none')
-        config
-          .plugin('InterpolateWebpackPlugin')
-          .use(InterpolateWebpackPlugin, [options])
-        config.plugins.delete('print-status')
-      },
-    }
-
-    webpack(poi.createWebpackChain().toConfig(), (err, stats) => {
-      if (err) {
-        reject(err)
-        return
-      }
-
-      if (stats.hasErrors()) {
-        reject(new Error(stats.toString()))
-        return
-      }
-
-      resolve(stats)
-    })
+    )
   })
 }
